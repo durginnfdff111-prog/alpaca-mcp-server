@@ -19,8 +19,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen
+RUN uv sync --frozen
 
 ENV PATH="/app/.venv/bin:$PATH"
 
