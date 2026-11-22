@@ -124,6 +124,7 @@ EXPECTED_TOOLS = {
     "place_stock_order",
     "place_crypto_order",
     "place_option_order",
+    "preview_crash_guard",
     # ReadMe Docs
     "search_alpaca_docs",
     "fetch_alpaca_doc",
