@@ -202,12 +202,17 @@ async def preview_stock_order(
         if not isinstance(positions, list):
             return _deny("positions inventory unverified")
         existing = Decimal("0")
+        gross_exposure = Decimal("0")
         for p in positions:
+            if not isinstance(p, dict) or p.get("asset_class") not in (None, "us_equity"):
+                return _deny("unrecognized or non-equity position requires separate risk controls")
+            qty = Decimal(str(p.get("qty", "0")))
+            if not qty.is_finite() or qty <= 0 or p.get("side") == "short":
+                return _deny("short or malformed position requires separate risk controls")
+            market_value = _decimal(p.get("market_value"), "position market_value")
+            gross_exposure += market_value
             if p.get("symbol") == symbol:
-                qty = Decimal(str(p.get("qty", "0")))
-                if qty < 0:
-                    return _deny("short exposure requires separate risk controls")
-                existing += max(Decimal("0"), Decimal(str(p.get("market_value", "0"))))
+                existing += market_value
         bars = await _get(
             data_client,
             f"/v2/stocks/{symbol}/bars",
@@ -230,6 +235,13 @@ async def preview_stock_order(
             ) if "qty" in order else amount
         if proposed_notional > cash:
             return _deny("insufficient unlevered cash", cash=str(cash))
+        if gross_exposure + proposed_notional > equity:
+            return _deny(
+                "proposed order would exceed unlevered account gross exposure",
+                current_gross_exposure=str(gross_exposure),
+                proposed_notional=str(proposed_notional),
+                equity=str(equity),
+            )
         if edge is None:
             return _deny(
                 "no verified out-of-sample Kelly statistics; fail closed",
