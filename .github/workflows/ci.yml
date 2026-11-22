@@ -7,6 +7,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:  # Paper API integration tests require an explicit manual action.
 
 jobs:
   # ── Job 1: Core tests (no secrets, no network) ────────────────────────
@@ -28,20 +29,18 @@ jobs:
         run: uv pip install --system -e ".[dev]"
 
       - name: Run core tests
-        run: pytest tests/test_integrity.py tests/test_server_construction.py tests/test_http_security.py
+        run: pytest tests/test_integrity.py tests/test_server_construction.py tests/test_http_security.py tests/test_crash_guard_paper.py
 
   # ── Job 2: Integration tests (paper API, secrets required) ────────────
-  # Runs only on pushes to main and PRs from the same repo (not forks).
-  # Fork PRs cannot access secrets, so this job is skipped for them.
+  # NEVER send paper orders merely because a PR was opened or code was pushed.
+  # Only an explicit workflow_dispatch may use paper credentials.
   #
   # Required GitHub Secrets (Settings > Secrets and variables > Actions):
   #   ALPACA_API_KEY    — paper trading account API key
   #   ALPACA_SECRET_KEY — paper trading account secret key
   test-integration:
     runs-on: ubuntu-latest
-    if: >-
-      github.event_name == 'push' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
 
