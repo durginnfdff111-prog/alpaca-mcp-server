@@ -23,7 +23,8 @@ It uses the latest completed daily bar only as an **indicative** share price. It
 
 - NO `POST /v2/orders`, `PATCH`, `DELETE`, or live orders can be performed through guarded order tools.
 - SELL/short, option, crypto, bracket, trailing, and extended-hours orders are unimplemented in this preview and blocked.
-- It rejects risk-increasing exposure if available cash is insufficient, existing holdings plus requested notional exceed the computed position cap, or another order is already open.
+- It rejects risk-increasing exposure if unlevered cash is insufficient, portfolio-wide gross exposure plus the proposal exceeds current account equity, the symbol-level position cap is breached, or another order is already open.
+- Any short position, ambiguous position value, or non-equity holding causes the prototype to reject the proposal rather than assuming negligible risk.
 - The existing unguarded behavior is retained when `CRASH_GUARD_PAPER_DRY_RUN` is not enabled; do not treat this feature branch or an unmodified deployment as protected.
 
 ## Outstanding work before any real paper submission
@@ -40,4 +41,4 @@ It uses the latest completed daily bar only as an **indicative** share price. It
 pytest tests/test_crash_guard_paper_preview.py -v
 ```
 
-Tests use `httpx.MockTransport` and fake account data. That is an **offline paper simulation**, not an order submitted to an Alpaca paper account. CI executes those tests without account credentials.
+Tests use `httpx.MockTransport` and fake account data. That is an **offline paper simulation**, not an order submitted to an Alpaca paper account. The CI workflow is configured to run these tests without account credentials, but a passing run must be observed before marking the PR validated.
