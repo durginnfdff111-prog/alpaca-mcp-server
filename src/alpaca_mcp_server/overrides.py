@@ -195,10 +195,6 @@ def register_order_tools(
 
         if crash_guard_dry_run:
             return await preview_stock_order(client, data_client, body)
-        if crash_guard_dry_run:
-            return _error("Crash Guard paper preview blocks cryptocurrency orders; NOT submitted")
-        if crash_guard_dry_run:
-            return _error("Crash Guard paper preview blocks option orders; NOT submitted")
         return await _post_order(client, body)
 
     @server.tool(
@@ -255,6 +251,8 @@ def register_order_tools(
         if client_order_id is not None:
             body["client_order_id"] = client_order_id
 
+        if crash_guard_dry_run:
+            return _error("Crash Guard paper preview blocks cryptocurrency orders; NOT submitted")
         return await _post_order(client, body)
 
     @server.tool(
@@ -354,4 +352,6 @@ def register_order_tools(
         if legs is not None:
             body["legs"] = legs
 
+        if crash_guard_dry_run:
+            return _error("Crash Guard paper preview blocks option orders; NOT submitted")
         return await _post_order(client, body)
