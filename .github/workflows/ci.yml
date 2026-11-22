@@ -33,7 +33,7 @@ jobs:
 
   # ── Job 2: Integration tests (paper API, secrets required) ────────────
   # NEVER send paper orders merely because a PR was opened or code was pushed.
-  # Only an explicit workflow_dispatch may use paper credentials.
+  # Only an explicit workflow_dispatch may use paper credentials.\n  # Run ONLY the dedicated GET-only paper-account smoke test; never the\n  # broad integration suite, which may contain order placement tests.
   #
   # Required GitHub Secrets (Settings > Secrets and variables > Actions):
   #   ALPACA_API_KEY    — paper trading account API key
@@ -60,4 +60,4 @@ jobs:
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
           ALPACA_PAPER_TRADE: "true"
-        run: pytest tests/ -m integration
+        run: pytest tests/test_paper_readonly_smoke.py -m integration
