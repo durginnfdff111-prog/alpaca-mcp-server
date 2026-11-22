@@ -165,3 +165,42 @@ def test_server_attaches_gateway_to_shared_trading_client(monkeypatch):
     base_url, trading_client = observed[0]
     assert base_url == PAPER_API_URL
     assert block_broker_mutations in trading_client.event_hooks["request"]
+
+
+@pytest.mark.parametrize("equity,expected_approved,expected_brake", [
+    (9999.0, True, 1.0),
+    (9000.0, True, 0.5),
+    (8500.0, True, 0.25),
+    (8000.0, False, 0.0),
+    (7500.0, False, 0.0),
+])
+def test_drawdown_brake_boundaries(equity, expected_approved, expected_brake):
+    decision = risk(equity=equity)
+    baseline = risk()
+    assert decision.approved is expected_approved
+    assert decision.weight <= baseline.weight * expected_brake + 1e-12
+
+
+@pytest.mark.parametrize("bad_price", [0, -1, float("inf"), float("nan")])
+def test_reject_invalid_prices(bad_price):
+    with pytest.raises(ValueError):
+        risk(price=bad_price)
+
+
+@pytest.mark.parametrize("method", ["PUT", "TRACE", "CONNECT"])
+@pytest.mark.asyncio
+async def test_unusual_http_methods_blocked(method):
+    observed = []
+
+    async def handler(request: httpx.Request):
+        observed.append(request.method)
+        return httpx.Response(200)
+
+    async with httpx.AsyncClient(
+        base_url=PAPER_API_URL,
+        transport=httpx.MockTransport(handler),
+        event_hooks={"request": [block_broker_mutations]},
+    ) as client:
+        with pytest.raises(PermissionError):
+            await client.request(method, "/v2/orders")
+    assert not observed
