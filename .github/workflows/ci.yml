@@ -29,11 +29,13 @@ jobs:
         run: uv pip install --system -e ".[dev]"
 
       - name: Run core tests
-        run: pytest tests/test_integrity.py tests/test_server_construction.py tests/test_http_security.py tests/test_crash_guard_paper.py
+        run: pytest tests/test_integrity.py tests/test_server_construction.py tests/test_http_security.py tests/test_crash_guard_paper.py tests/test_ibkr_readonly_risk.py
 
   # ── Job 2: Integration tests (paper API, secrets required) ────────────
   # NEVER send paper orders merely because a PR was opened or code was pushed.
-  # Only an explicit workflow_dispatch may use paper credentials.\n  # Run ONLY the dedicated GET-only paper-account smoke test; never the\n  # broad integration suite, which may contain order placement tests.
+  # Only an explicit workflow_dispatch may use paper credentials.
+  # Run ONLY the dedicated GET-only paper-account smoke test; never the
+  # broad integration suite, which may contain order placement tests.
   #
   # Required GitHub Secrets (Settings > Secrets and variables > Actions):
   #   ALPACA_API_KEY    — paper trading account API key
