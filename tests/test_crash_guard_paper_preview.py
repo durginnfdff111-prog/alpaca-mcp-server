@@ -9,6 +9,9 @@ from unittest.mock import patch
 import httpx
 import pytest
 from fastmcp.client import Client
+from fastmcp import FastMCP
+
+from alpaca_mcp_server.overrides import register_order_tools
 
 from alpaca_mcp_server.crash_guard import evaluate_position
 from alpaca_mcp_server.paper_risk import VerifiedEdge, preview_stock_order
@@ -212,3 +215,31 @@ async def test_guarded_toolset_does_not_expose_unguarded_mutations():
         "exercise_options_position", "update_account_config",
     ):
         assert dangerous not in names
+
+
+@pytest.mark.asyncio
+async def test_all_three_guarded_order_tool_routes_never_post():
+    calls = []
+    def forbid_network(req):
+        calls.append((req.method, req.url.path))
+        raise AssertionError("paper preview must not send orders")
+
+    async with httpx.AsyncClient(
+        base_url="https://paper-api.alpaca.markets",
+        transport=httpx.MockTransport(forbid_network),
+    ) as trading:
+        server = FastMCP("paper-order-safety")
+        register_order_tools(
+            server, trading, data_client=None, crash_guard_dry_run=True,
+        )
+        async with Client(transport=server) as client:
+            await client.call_tool("place_stock_order", {
+                "symbol": "SPY", "side": "buy", "qty": "1"
+            })
+            await client.call_tool("place_crypto_order", {
+                "symbol": "BTC/USD", "side": "buy", "qty": "0.01"
+            })
+            await client.call_tool("place_option_order", {
+                "symbol": "SPY270115C00500000", "side": "buy", "qty": "1"
+            })
+    assert calls == []
