@@ -42,3 +42,30 @@
 The CI core job executes this suite without secrets. The secret-backed
 paper integration job is **manual workflow_dispatch only**, so a pull request
 cannot accidentally place paper orders.
+
+## Railway production configuration audit (2026-11-22, read-only)
+- Project: `6c55d8c8-af18-4c14-a5b0-731a479324a3`.
+- Service: `alpaca-mcp-server`; environment: `production`.
+- Deployment status: `SUCCESS`; deployed source: `main`, **not this branch**.
+- Service configuration reports no pending staged changes and no public domain.
+- Observed environment variable **names only**: `ALPACA_API_BASE_URL`,
+  `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`. Secret values were not requested.
+- IMPORTANT: current `server.py` chooses paper vs live using
+  `ALPACA_PAPER_TRADE` (default true), NOT `ALPACA_API_BASE_URL`.
+  Therefore the configured base-URL variable does not prove the effective
+  Alpaca endpoint, nor that the credentials are paper credentials.
+- A successful Railway deployment does **not** prove an authenticated
+  Alpaca paper connection. No read-only account probe was performed.
+- No deployment or environment edits were made during this audit.
+
+## Release gate
+1. Run the complete CI test suite on this exact branch; capture run IDs and logs.
+2. Verify the paper endpoint AND paper credentials using read-only account
+   calls, with secrets redacted and no broker mutations.
+3. Verify authoritative paper equity, cash-flow-adjusted peak, adjusted
+   daily bars, open orders and positions; reject missing/stale data.
+4. Verify out-of-sample Kelly statistics and portfolio-wide exposure limits.
+5. Review emergency cancel/close handling separately; the current blanket
+   mutation blocker must NOT be described as a production liquidation guard.
+6. Obtain explicit approval for any paper order pilot; never auto-enable
+   live orders or merge/deploy this draft without review.
