@@ -3,6 +3,7 @@ import httpx
 import pytest
 
 from alpaca_mcp_server.crash_guard import RiskConfig, evaluate_position
+from alpaca_mcp_server.paper_preview import register_paper_preview_tool
 from alpaca_mcp_server.paper_gateway import (
     PAPER_API_URL,
     block_broker_mutations,
@@ -92,3 +93,41 @@ async def test_all_broker_mutations_are_blocked_before_network_io():
         result = await client.get("/v2/account")
         assert result.status_code == 200
         assert observed == ["GET"]
+
+
+@pytest.mark.asyncio
+async def test_preview_tool_never_submits_orders_even_if_model_approves():
+    class FakeServer:
+        def tool(self, **_annotations):
+            def decorated(func):
+                self.preview = func
+                return func
+            return decorated
+
+    server = FakeServer()
+    register_paper_preview_tool(server)
+    result = await server.preview(
+        equity=10000,
+        peak_equity=10000,
+        price=200,
+        closes=rising_closes(),
+        win_probability=0.6,
+        win_loss_ratio=1.5,
+    )
+    assert result["simulation_valid"] is True
+    assert result["decision"]["approved"] is True
+    assert result["execution_authorized"] is False
+    assert result["submitted"] is False
+    assert "unverified" in result["input_provenance"]
+
+    rejected = await server.preview(
+        equity=0,
+        peak_equity=10000,
+        price=200,
+        closes=rising_closes(),
+        win_probability=0.6,
+        win_loss_ratio=1.5,
+    )
+    assert rejected["simulation_valid"] is False
+    assert rejected["execution_authorized"] is False
+    assert rejected["submitted"] is False
