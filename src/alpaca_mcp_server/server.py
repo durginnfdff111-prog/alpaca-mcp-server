@@ -217,7 +217,7 @@ def build_server(
         main.mount(sub)
 
     if data_client is not None:
-        allowed = spec_ops["market-data"]
+        allowed = spec_ops.get("market-data", set())
         spec = _load_spec("market-data-api")
         sub = FastMCP.from_openapi(
             spec,
