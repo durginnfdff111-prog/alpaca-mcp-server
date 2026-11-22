@@ -21,6 +21,7 @@ from fastmcp.server.providers.openapi.routing import MCPType
 
 from .readme_docs import ReadMeClientFactory, register_readme_docs_tools
 from .paper_gateway import block_broker_mutations, require_paper_endpoint
+from .paper_preview import register_paper_preview_tool
 from .security import TrustBoundaryMiddleware
 from .tool_registry import TOOL_DESCRIPTIONS, TOOL_NAMES
 from .toolsets import OVERRIDE_OPERATION_IDS, TOOLSETS, get_active_operations
@@ -214,6 +215,7 @@ def build_server(
     if data_client is not None and active_ts & {"stock-data", "crypto-data"}:
         _register_market_data_overrides(main, data_client)
 
+    register_paper_preview_tool(main)
     register_readme_docs_tools(main, client_factory=readme_client_factory)
 
     return main
