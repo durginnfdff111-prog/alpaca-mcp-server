@@ -44,7 +44,7 @@ def fixtures(*, equity=10_000, cash=10_000, highwater=10_000, cashflow=0):
     return account, history, bars
 
 
-def fake_clients(account, history, bars):
+def fake_clients(account, history, bars, positions=None):
     calls = []
 
     def handler(request):
@@ -54,7 +54,7 @@ def fake_clients(account, history, bars):
             "/v2/account": account,
             "/v2/account/portfolio/history": history,
             "/v2/orders": [],
-            "/v2/positions": [],
+            "/v2/positions": positions if positions is not None else [],
             "/v2/stocks/SPY/bars": bars,
         }
         return httpx.Response(200, json=routes[request.url.path])
@@ -243,3 +243,47 @@ async def test_all_three_guarded_order_tool_routes_never_post():
                 "symbol": "SPY270115C00500000", "side": "buy", "qty": "1"
             })
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_paper_preview_rejects_short_position_anywhere_in_account():
+    account, history, bars = fixtures()
+    trading, market, calls = fake_clients(
+        account, history, bars,
+        positions=[{
+            "symbol": "TSLA", "qty": "-2", "market_value": "-500",
+            "asset_class": "us_equity", "side": "short",
+        }],
+    )
+    async with trading, market:
+        result = await preview_stock_order(
+            trading, market, {
+                "symbol": "SPY", "side": "buy", "type": "market",
+                "time_in_force": "day", "qty": "1",
+            }, now=NOW,
+        )
+    assert not result["approved"]
+    assert "short" in result["reason"]
+    assert calls and all(method == "GET" for method, _ in calls)
+
+
+@pytest.mark.asyncio
+async def test_paper_preview_rejects_portfolio_gross_leverage():
+    account, history, bars = fixtures()
+    trading, market, calls = fake_clients(
+        account, history, bars,
+        positions=[{
+            "symbol": "AAPL", "qty": "50", "market_value": "9900",
+            "asset_class": "us_equity", "side": "long",
+        }],
+    )
+    async with trading, market:
+        result = await preview_stock_order(
+            trading, market, {
+                "symbol": "SPY", "side": "buy", "type": "market",
+                "time_in_force": "day", "qty": "1",
+            }, now=NOW,
+        )
+    assert not result["approved"]
+    assert "gross exposure" in result["reason"]
+    assert calls and all(method == "GET" for method, _ in calls)
