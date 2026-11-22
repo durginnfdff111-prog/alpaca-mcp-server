@@ -13,6 +13,8 @@ from typing import Optional
 import httpx
 from fastmcp import FastMCP
 
+from .paper_risk import preview_stock_order
+
 
 def _error(message: str, **extra: object) -> dict:
     """Build a standardised error dict returned to the LLM."""
@@ -55,8 +57,11 @@ async def _post_order(client: httpx.AsyncClient, body: dict) -> dict:
 def register_order_tools(
     server: FastMCP,
     client: httpx.AsyncClient,
+    *,
+    data_client: httpx.AsyncClient | None = None,
+    crash_guard_dry_run: bool = False,
 ) -> None:
-    """Register the three order placement tools on the given server."""
+    """Register order tools; guarded paper mode cannot transmit any orders."""
 
     @server.tool(
         annotations={
@@ -188,6 +193,8 @@ def register_order_tools(
         if advanced_instructions is not None:
             body["advanced_instructions"] = advanced_instructions
 
+        if crash_guard_dry_run:
+            return await preview_stock_order(client, data_client, body)
         return await _post_order(client, body)
 
     @server.tool(
@@ -244,6 +251,8 @@ def register_order_tools(
         if client_order_id is not None:
             body["client_order_id"] = client_order_id
 
+        if crash_guard_dry_run:
+            return _error("Crash Guard paper preview blocks cryptocurrency orders; NOT submitted")
         return await _post_order(client, body)
 
     @server.tool(
@@ -343,4 +352,6 @@ def register_order_tools(
         if legs is not None:
             body["legs"] = legs
 
+        if crash_guard_dry_run:
+            return _error("Crash Guard paper preview blocks option orders; NOT submitted")
         return await _post_order(client, body)

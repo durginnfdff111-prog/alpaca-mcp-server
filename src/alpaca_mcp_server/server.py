@@ -32,6 +32,29 @@ TRADING_API_BASE_URLS = {
 }
 MARKET_DATA_BASE_URL = "https://data.alpaca.markets"
 
+# Explicit read-only allowlist: do not expose order replace, position closes,
+# option exercise, account configuration writes, watchlist edits or locate writes
+# while testing Crash Guard. The three order overrides are dry-run only.
+PAPER_GUARD_READ_ONLY_OPERATIONS = frozenset({
+    "getAccount", "getAccountConfig", "getAccountPortfolioHistory",
+    "getAccountActivities", "getAccountActivitiesByActivityType",
+    "getAllOrders", "getOrderByOrderID", "getOrderByClientOrderId",
+    "getAllOpenPositions", "getOpenPosition",
+    "getWatchlists", "getWatchlistById",
+    "get-v2-assets", "get-v2-assets-symbol_or_asset_id",
+    "get-options-contracts", "get-option-contract-symbol_or_id",
+    "LegacyCalendar", "LegacyClock",
+    "get-v2-corporate_actions-announcements",
+    "get-v2-corporate_actions-announcements-id",
+    "listLocates", "getLocate", "listLocateQuotes",
+})
+
+
+def _paper_guard_enabled() -> bool:
+    return os.environ.get("CRASH_GUARD_PAPER_DRY_RUN", "").strip().lower() in {
+        "true", "1", "yes"
+    }
+
 
 def strip_v_from_version(release_version: str) -> str:
     if release_version[:1] == "v" and release_version[1:2].isdigit():
@@ -145,9 +168,15 @@ def build_server(
     """Construct the Alpaca MCP server from OpenAPI specs."""
     active_toolsets = _parse_toolsets()
     spec_ops = get_active_operations(active_toolsets)
+    guarded_paper = _paper_guard_enabled()
+    if guarded_paper and "trading" in spec_ops:
+        spec_ops["trading"] &= PAPER_GUARD_READ_ONLY_OPERATIONS
 
     auth_headers = _build_auth_headers()
     trading_base = _get_trading_base_url()
+    if guarded_paper and trading_base != TRADING_API_BASE_URLS["paper"]:
+        raise ValueError("Crash Guard preview refuses ALPACA_PAPER_TRADE=false")
+
     data_base = _ensure_scheme(os.environ.get("DATA_API_URL", MARKET_DATA_BASE_URL)).rstrip("/")
 
     clients: list[httpx.AsyncClient] = []
@@ -158,7 +187,7 @@ def build_server(
         clients.append(trading_client)
 
     data_client: httpx.AsyncClient | None = None
-    if "market-data" in spec_ops:
+    if "market-data" in spec_ops or guarded_paper:
         data_client = _make_api_client(data_base, auth_headers)
         clients.append(data_client)
 
@@ -188,7 +217,7 @@ def build_server(
         main.mount(sub)
 
     if data_client is not None:
-        allowed = spec_ops["market-data"]
+        allowed = spec_ops.get("market-data", set())
         spec = _load_spec("market-data-api")
         sub = FastMCP.from_openapi(
             spec,
@@ -204,7 +233,9 @@ def build_server(
     active_ts = active_toolsets if active_toolsets is not None else set(TOOLSETS.keys())
 
     if trading_client is not None and "trading" in active_ts:
-        _register_trading_overrides(main, trading_client)
+        _register_trading_overrides(
+            main, trading_client, data_client=data_client, guarded_paper=guarded_paper
+        )
 
     if data_client is not None and active_ts & {"stock-data", "crypto-data"}:
         _register_market_data_overrides(main, data_client)
@@ -214,11 +245,22 @@ def build_server(
     return main
 
 
-def _register_trading_overrides(server: FastMCP, trading_client: httpx.AsyncClient) -> None:
-    """Register hand-crafted override tools for complex trading endpoints."""
+def _register_trading_overrides(
+    server: FastMCP,
+    trading_client: httpx.AsyncClient,
+    *,
+    data_client: httpx.AsyncClient | None = None,
+    guarded_paper: bool = False,
+) -> None:
+    """Register order tools, passing down fail-closed paper preview mode."""
     from .overrides import register_order_tools
 
-    register_order_tools(server, trading_client)
+    register_order_tools(
+        server,
+        trading_client,
+        data_client=data_client,
+        crash_guard_dry_run=guarded_paper,
+    )
 
 
 def _register_market_data_overrides(server: FastMCP, data_client: httpx.AsyncClient) -> None:
