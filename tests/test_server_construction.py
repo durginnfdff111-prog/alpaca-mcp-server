@@ -361,9 +361,9 @@ def test_strip_openapi_vendor_extensions_recursively():
 
 
 async def test_tool_count():
-    """Server must expose exactly 72 tools."""
+    """Server must expose exactly 73 tools, including the read-only preview."""
     tools = await _list_tools()
-    assert len(tools) == 72, f"Expected 72 tools, got {len(tools)}"
+    assert len(tools) == 73, f"Expected 73 tools, got {len(tools)}"
 
 
 async def test_tool_names_match():
