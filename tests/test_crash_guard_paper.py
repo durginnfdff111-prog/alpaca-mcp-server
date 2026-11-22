@@ -131,3 +131,37 @@ async def test_preview_tool_never_submits_orders_even_if_model_approves():
     assert rejected["simulation_valid"] is False
     assert rejected["execution_authorized"] is False
     assert rejected["submitted"] is False
+
+
+def test_server_construction_rejects_live_environment(monkeypatch):
+    from alpaca_mcp_server.server import build_server
+
+    monkeypatch.setenv("ALPACA_PAPER_TRADE", "false")
+    monkeypatch.setenv("ALPACA_TOOLSETS", "account,trading")
+    monkeypatch.setenv("ALPACA_API_KEY", "dummy")
+    monkeypatch.setenv("ALPACA_SECRET_KEY", "dummy")
+    with pytest.raises(RuntimeError, match="live trading is disabled"):
+        build_server()
+
+
+def test_server_attaches_gateway_to_shared_trading_client(monkeypatch):
+    from alpaca_mcp_server import server as server_module
+
+    observed = []
+    original_factory = server_module._make_api_client
+
+    def capture_client(base_url, headers):
+        client = original_factory(base_url, headers)
+        observed.append((base_url, client))
+        return client
+
+    monkeypatch.setenv("ALPACA_PAPER_TRADE", "true")
+    monkeypatch.setenv("ALPACA_TOOLSETS", "account,trading")
+    monkeypatch.setenv("ALPACA_API_KEY", "dummy")
+    monkeypatch.setenv("ALPACA_SECRET_KEY", "dummy")
+    monkeypatch.setattr(server_module, "_make_api_client", capture_client)
+    server_module.build_server()
+    assert len(observed) == 1
+    base_url, trading_client = observed[0]
+    assert base_url == PAPER_API_URL
+    assert block_broker_mutations in trading_client.event_hooks["request"]
