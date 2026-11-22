@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 from math import isfinite
 import re
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -19,6 +20,8 @@ from .crash_guard import evaluate_position
 
 _SYMBOL = re.compile(r"^[A-Z][A-Z0-9.]{0,9}$")
 _PAPER_URL = "https://paper-api.alpaca.markets"
+_DATA_URL = "https://data.alpaca.markets"
+_ET = ZoneInfo("America/New_York")
 
 
 @dataclass(frozen=True)
@@ -68,7 +71,10 @@ def _when(value: Any) -> datetime:
         return datetime.fromtimestamp(value, timezone.utc)
     if not isinstance(value, str):
         raise ValueError("missing or invalid timestamp")
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("timestamp has no timezone")
+    return parsed.astimezone(timezone.utc)
 
 
 async def _get(client: httpx.AsyncClient, url: str, params: dict | None = None) -> Any:
@@ -121,6 +127,8 @@ def _closes_from_bars(payload: Any, now: datetime) -> tuple[list[float], datetim
         raise ValueError("bars unordered or duplicated")
     if not now - timedelta(days=7) <= times[-1] < now:
         raise ValueError("latest daily bar is stale or incomplete")
+    if times[-1].astimezone(_ET).date() >= now.astimezone(_ET).date():
+        raise ValueError("current New York session bar may be incomplete")
     closes = [float(_decimal(bar["c"], "close")) for bar in bars]
     return closes, times[-1]
 
@@ -143,6 +151,8 @@ def _supported_order(order: dict) -> tuple[str, Decimal]:
         raise ValueError("specify exactly one of qty and notional")
     amount = _decimal(order.get("qty", order.get("notional")), "qty/notional")
     if order.get("type") == "limit":
+        if "notional" in order:
+            raise ValueError("notional cannot be used with limit orders")
         _decimal(order.get("limit_price"), "limit_price")
     return symbol, amount
 
@@ -166,8 +176,8 @@ async def preview_stock_order(
     now = now.astimezone(timezone.utc)
     if str(trading_client.base_url).rstrip("/") != _PAPER_URL:
         return _deny("not connected to official Alpaca paper endpoint")
-    if data_client is None:
-        return _deny("market-data client unavailable")
+    if data_client is None or str(data_client.base_url).rstrip("/") != _DATA_URL:
+        return _deny("official Alpaca market-data client unavailable")
     try:
         symbol, amount = _supported_order(order)
         account = await _get(trading_client, "/v2/account")
@@ -175,6 +185,10 @@ async def preview_stock_order(
         cash = _decimal(account.get("cash"), "cash")
         if not isinstance(account, dict) or account.get("status") != "ACTIVE":
             return _deny("account status unverified")
+        if any(account.get(k) is True for k in (
+            "trading_blocked", "account_blocked", "trade_suspended_by_user"
+        )):
+            return _deny("account has trading restrictions")
         history = await _get(
             trading_client,
             "/v2/account/portfolio/history",
@@ -200,7 +214,7 @@ async def preview_stock_order(
             {
                 "timeframe": "1Day",
                 "start": (now - timedelta(days=430)).date().isoformat(),
-                "end": now.date().isoformat(),
+                "end": now.astimezone(_ET).date().isoformat(),
                 "limit": 1000,
                 "adjustment": "split",
                 "feed": "iex",
